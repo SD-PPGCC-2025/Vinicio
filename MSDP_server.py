@@ -5,15 +5,19 @@ import struct
 import threading
 import time
 import random
+lock = threading.Lock()
+clients = []      
 
 MCAST_PORT = 5007
 
-# Multicast groups locais do RP1
-local_sources = {
-    '224.1.1.1': True  # RP1 tem uma fonte nesse grupo
-}
+lock = threading.Lock()         
+clients = []                    
 
 joined_groups = set()
+
+local_sources = {
+    '224.1.1.1': True
+}
 
 def udp_sender(mcast_grp):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -24,7 +28,7 @@ def udp_sender(mcast_grp):
         msg = f"RP1-Sensor@{mcast_grp} TEMP:{temp}"
         sock.sendto(msg.encode(), (mcast_grp, MCAST_PORT))
         print(f"[RP1 UDP Sender] Sent: {msg}")
-        time.sleep(3)
+        time.sleep(10)
 
 def udp_receiver(mcast_grp):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -37,35 +41,63 @@ def udp_receiver(mcast_grp):
         data, addr = sock.recvfrom(1024)
         print(f"[RP1 UDP Receiver] Received from {addr}: {data.decode()}")
 
+def client_handler(conn, addr):
+    global clients, joined_groups
+    print(f"[RP1 MSDP] Client connected: {addr}")
+
+    # Enviar anúncios armazenados para cliente novo
+    with lock:
+        for group in local_sources.keys():
+            conn.sendall(f"SA {group}\n".encode())
+        for group in joined_groups:
+            conn.sendall(f"SA {group}\n".encode())
+
+    try:
+        while True:
+            data = conn.recv(1024)
+            if not data:
+                break
+            msg = data.decode().strip()
+            print(f"[RP1 MSDP] Received from {addr}: {msg}")
+
+            if msg.startswith("SA"):
+                _, group = msg.split()
+                with lock:
+                    if group not in joined_groups and group not in local_sources:
+                        print(f"[RP1 MSDP] Joining multicast group {group} due to announcement from {addr}")
+                        joined_groups.add(group)
+                        threading.Thread(target=udp_receiver, args=(group,), daemon=True).start()
+
+                    # Repassar anúncio para outros clientes
+                    for c in clients:
+                        if c != conn:
+                            try:
+                                c.sendall(f"SA {group}\n".encode())
+                            except Exception as e:
+                                print(f"[RP1 MSDP] Error sending to client: {e}")
+    except Exception as e:
+        print(f"[RP1 MSDP] Connection error with {addr}: {e}")
+    finally:
+        with lock:
+            if conn in clients:
+                clients.remove(conn)
+        conn.close()
+        print(f"[RP1 MSDP] Client disconnected: {addr}")
+
 def msdp_server():
+    global clients
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.bind(('localhost', 10000))
-    srv.listen(1)
+    srv.listen(5)
     print("[RP1 MSDP] Listening for MSDP connections on TCP 10000")
-    conn, addr = srv.accept()
-    print(f"[RP1 MSDP] Connected by {addr}")
-
-    # Envia inicialmente suas fontes
-    for group in local_sources.keys():
-        msg = f"SA {group}"
-        conn.sendall(msg.encode())
 
     while True:
-        data = conn.recv(1024)
-        if not data:
-            break
-        msg = data.decode()
-        print(f"[RP1 MSDP] Received: {msg}")
-        if msg.startswith("SA"):
-            # Recebe anúncio de fonte do RP2
-            _, group = msg.split()
-            if group not in joined_groups:
-                print(f"[RP1 MSDP] Joining multicast group {group} devido anúncio MSDP")
-                joined_groups.add(group)
-                # Inicia receptor UDP para essa fonte
-                threading.Thread(target=udp_receiver, args=(group,), daemon=True).start()
+        conn, addr = srv.accept()
+        with lock:
+            clients.append(conn)
+        threading.Thread(target=client_handler, args=(conn, addr), daemon=True).start()
 
-    conn.close()
+
 
 if __name__ == "__main__":
     # Inicia UDP sender para fontes locais

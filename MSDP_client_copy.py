@@ -1,4 +1,4 @@
-# rp2.py
+# RP3.py
 
 import socket
 import struct
@@ -9,7 +9,7 @@ import random
 MCAST_PORT = 5007
 
 local_sources = {
-    '224.2.2.2': True
+    '224.3.3.3': True
 }
 
 joined_groups = set()
@@ -20,9 +20,9 @@ def udp_sender(mcast_grp):
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
     while True:
         humidity = round(random.uniform(40, 60), 2)
-        msg = f"RP2-Sensor@{mcast_grp} HUM:{humidity}"
+        msg = f"RP3-Sensor@{mcast_grp} HUM:{humidity}"
         sock.sendto(msg.encode(), (mcast_grp, MCAST_PORT))
-        print(f"[RP2 UDP Sender] Sent: {msg}")
+        print(f"[RP3 UDP Sender] Sent: {msg}")
         time.sleep(10)
 
 def udp_receiver(mcast_grp):
@@ -31,15 +31,15 @@ def udp_receiver(mcast_grp):
     sock.bind(('', MCAST_PORT))
     mreq = struct.pack("4sl", socket.inet_aton(mcast_grp), socket.INADDR_ANY)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-    print(f"[RP2 UDP Receiver] Listening on {mcast_grp}:{MCAST_PORT}")
+    print(f"[RP3 UDP Receiver] Listening on {mcast_grp}:{MCAST_PORT}")
     while True:
         data, addr = sock.recvfrom(1024)
-        print(f"[RP2 UDP Receiver] Received from {addr}: {data.decode()}")
+        print(f"[RP3 UDP Receiver] Received from {addr}: {data.decode()}")
 
 def msdp_client():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect(('localhost', 10000))
-    print("[RP2 MSDP] Connected to RP1 MSDP server")
+    print("[RP3 MSDP] Connected to RP1 MSDP server")
 
     # Envia suas fontes para RP1
     for group in local_sources.keys():
@@ -51,11 +51,11 @@ def msdp_client():
         if not data:
             break
         msg = data.decode()
-        print(f"[RP2 MSDP] Received: {msg}")
+        print(f"[RP3 MSDP] Received: {msg}")
         if msg.startswith("SA"):
             _, group = msg.split()
             if group not in joined_groups:
-                print(f"[RP2 MSDP] Joining multicast group {group} devido anúncio MSDP")
+                print(f"[RP3 MSDP] Joining multicast group {group} devido anúncio MSDP")
                 joined_groups.add(group)
                 threading.Thread(target=udp_receiver, args=(group,), daemon=True).start()
 
