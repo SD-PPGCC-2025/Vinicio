@@ -100,13 +100,16 @@ def msdp_server():
 
 
 if __name__ == "__main__":
-    # Inicia UDP sender para fontes locais
-    for group in local_sources.keys():
-        threading.Thread(target=udp_sender, args=(group,), daemon=True).start()
+    try:
+        # Inicia UDP sender para fontes locais
+        for group in local_sources.keys():
+            threading.Thread(target=udp_sender, args=(group,), daemon=True).start()
 
-    # Inicia UDP receptor para grupos locais
-    for group in local_sources.keys():
-        threading.Thread(target=udp_receiver, args=(group,), daemon=True).start()
+        # Inicia UDP receptor para grupos locais
+        for group in local_sources.keys():
+            threading.Thread(target=udp_receiver, args=(group,), daemon=True).start()
 
-    # Inicia servidor MSDP
-    msdp_server()
+        # Inicia servidor MSDP
+        msdp_server()
+    except KeyboardInterrupt:
+        print("Receiver stopped.")
